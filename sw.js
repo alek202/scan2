@@ -1,6 +1,6 @@
 'use strict';
-var CACHE = 'scanner2-v13';
-var FILES = ['./', 'index.html', 'app.js?v=13', 'bwip-js.min.js?v=13', 'barcode-detector.min.js?v=13', 'zxing_reader.wasm', 'manifest.json', 'icon.svg'];
+var CACHE = 'scanner2-v14';
+var FILES = ['./', 'index.html', 'app.js?v=14', 'bwip-js.min.js?v=14', 'barcode-detector.min.js?v=14', 'zxing_reader.wasm', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));

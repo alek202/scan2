@@ -370,6 +370,7 @@ function orderLine(text, cls) { var o = el('orderInfo'); o.textContent = text; o
 function showOrder() {
   btnSend.disabled = codes.length === 0;
   if (!order) { orderLine(codes.length ? 'Не отправлено на кассу' : '', codes.length ? 'wait' : ''); return; }
+  if (order.status === 'cancelled') { orderLine('Заказ № ' + order.id + ' отменён', 'bad'); return; }
   if (order.status === 'acked') orderLine('Заказ № ' + order.id + ': принят кассой (' + order.count + ' шт.)', 'ok');
   else orderLine('Заказ № ' + order.id + ': передан, ждёт кассу (' + order.count + ' шт.)', 'wait');
 }
@@ -390,6 +391,7 @@ function poll() {
   if (!order || order.status === 'acked' || !cfg.url) return;
   api('GET', '/api/orders/' + order.id).then(function (j) {
     if (j.status === 'acked') { order.status = 'acked'; saveOrder(); showOrder(); beep('ok'); return; }
+    if (j.status === 'cancelled') { order.status = 'cancelled'; saveOrder(); showOrder(); return; }
     pollTimer = setTimeout(poll, 5000);
   }).catch(function () { pollTimer = setTimeout(poll, 10000); });
 }
@@ -397,9 +399,33 @@ function poll() {
 function sendOrder() {
   if (!cfg.url || !cfg.token) { openCfg(); return; }
   if (!codes.length) return;
+  var sig = codes.join('\n');
+  // тот же список уже передан или принят кассой — повторно не отправляем
+  if (order && order.sig === sig && order.status !== 'cancelled') {
+    beep('dup');
+    orderLine(order.status === 'acked'
+      ? 'Этот список уже принят кассой (заказ № ' + order.id + '). Для новых канистр нажмите «Новый заказ».'
+      : 'Уже передано: заказ № ' + order.id + ', ждёт кассу.', 'wait');
+    return;
+  }
+  // заказ уже принят кассой — дополнять его нельзя
+  if (order && order.status === 'acked') {
+    beep('bad');
+    orderLine('Заказ № ' + order.id + ' уже принят кассой. Для новых канистр нажмите «Новый заказ».', 'bad');
+    return;
+  }
+  // заказ передан, но не принят, а список изменился — предлагаем заменить
+  var replace = order && order.status === 'new';
+  if (replace && !confirm('Заказ № ' + order.id + ' ещё не принят кассой. Заменить его новым списком из ' + codes.length + ' кодов?')) return;
   btnSend.disabled = true; orderLine('Отправляю…', 'wait');
-  api('POST', '/api/orders', { seller: cfg.seller, codes: codes }).then(function (j) {
-    order = { id: j.id, status: 'new', count: j.count || codes.length };
+  var prev = replace ? api('POST', '/api/orders/' + order.id + '/cancel').catch(function (e) {
+    if (e && e.status === 409) throw new Error('старый заказ № ' + order.id + ' уже принят кассой, обновите страницу');
+    throw e;
+  }) : Promise.resolve();
+  prev.then(function () {
+    return api('POST', '/api/orders', { seller: cfg.seller, codes: codes });
+  }).then(function (j) {
+    order = { id: j.id, status: 'new', count: j.count || codes.length, sig: sig };
     saveOrder(); showOrder(); beep('ok'); poll();
   }).catch(function (e) {
     btnSend.disabled = false;
