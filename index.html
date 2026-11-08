@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>Сканер 2</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<style>
+  :root { --bg:#111; --fg:#f2f2f2; --mut:#9a9a9a; --ok:#2ecc71; --bad:#e74c3c; --acc:#3d8bfd; --card:#1c1c1c; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:16px/1.35 system-ui,sans-serif; }
+  body { display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #cam { position:relative; flex:0 0 42vh; background:#000; overflow:hidden; }
+  #video { width:100%; height:100%; object-fit:cover; }
+  #overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #status { position:absolute; left:0; right:0; bottom:0; padding:6px 12px; background:rgba(0,0,0,.55); font-weight:600; min-height:32px; }
+  #status.ok { color:var(--ok); } #status.bad { color:var(--bad); }
+  #status .big { font-size:28px; font-weight:700; line-height:1.15; }
+  #status .small { font-size:13px; font-weight:500; color:#ddd; margin-top:2px; word-break:break-all; }
+  #status .small.warn { color:#ffb020; font-weight:600; }
+  #bar3 { display:flex; gap:8px; padding:0 12px 8px; }
+  #bar3 button { flex:1; }
+  #orderInfo { padding:0 16px 6px; font-weight:600; min-height:1.3em; color:var(--mut); }
+  #orderInfo.ok { color:var(--ok); } #orderInfo.bad { color:var(--bad); } #orderInfo.wait { color:#ffb020; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:30; padding:16px; }
+  .modal.on { display:flex; }
+  .jbox label { display:flex; flex-direction:column; gap:4px; color:var(--mut); font-size:13px; }
+  .jbox label input { margin-left:0; }
+  #bar, #bar2 { display:flex; gap:8px; padding:8px 12px; align-items:center; }
+  #count { flex:1; font-size:20px; font-weight:700; }
+  button { background:var(--card); color:var(--fg); border:1px solid #333; border-radius:10px; padding:12px 14px; font:inherit; font-weight:600; }
+  button.main { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.4; }
+  #list { flex:1; overflow:auto; margin:0; padding:0 12px 12px; list-style:none; }
+  #list li { padding:8px 10px; margin-bottom:6px; background:var(--card); border-radius:8px; font:13px/1.3 ui-monospace,monospace; word-break:break-all; display:flex; gap:8px; }
+  #list li b { color:var(--mut); font-weight:600; min-width:2.2em; }
+  #start { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #msg { padding:14px 16px; color:var(--mut); }
+  #viewer { position:fixed; inset:0; background:#fff; color:#000; display:none; flex-direction:column; align-items:center; z-index:10; padding:env(safe-area-inset-top) 8px env(safe-area-inset-bottom); }
+  #viewer.on { display:flex; }
+  #vwrap { flex:1; width:100%; display:flex; align-items:center; justify-content:center; min-height:0; }
+  #vcode { width:min(88vw,70vh); height:min(88vw,70vh); image-rendering:pixelated; }
+  #vinfo { font-size:22px; font-weight:700; margin:8px 0; }
+  #vbtns { display:flex; gap:10px; width:100%; max-width:520px; padding-bottom:10px; }
+  #vbtns button { flex:1; background:#eee; color:#000; border-color:#ccc; font-size:18px; padding:16px 8px; }
+  #vbtns button.main { background:var(--acc); color:#fff; }
+  #jrn { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:20; padding:16px; }
+  #jrn.on { display:flex; }
+  .jbox { background:var(--card); border-radius:14px; padding:18px; width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; }
+  .jtitle { font-size:20px; font-weight:700; }
+  .jbox input { background:#000; color:var(--fg); border:1px solid #333; border-radius:8px; padding:10px; font:inherit; margin-left:8px; }
+  #jInfo { color:var(--mut); min-height:1.4em; }
+  .jbtns { display:flex; flex-direction:column; gap:8px; }
+  #vname { font-size:18px; font-weight:600; text-align:center; padding:0 8px; margin-bottom:4px; }
+  .pname { color:#ddd; font:600 13px/1.3 system-ui,sans-serif; margin-bottom:2px; }
+  #vtxt { font:11px ui-monospace,monospace; color:#555; word-break:break-all; max-height:3.4em; overflow:hidden; text-align:center; padding:0 8px; }
+</style>
+</head>
+<body>
+<div id="cam">
+  <video id="video" playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div id="status">Нажмите «Включить камеру»</div>
+  <div id="start"><button class="main" id="btnStart">Включить камеру</button></div>
+</div>
+<div id="bar">
+  <div id="count">0 кодов</div>
+  <button id="btnTorch" disabled>Свет</button>
+  <button id="btnShow" class="main" disabled>Показать</button>
+</div>
+<div id="orderInfo"></div>
+<div id="msg"></div>
+<ul id="list"></ul>
+<div id="bar2">
+  <button id="btnUndo" disabled>Убрать последний</button>
+  <button id="btnClear" class="danger" disabled>Очистить всё</button>
+  <button id="btnJournal">Журнал</button>
+</div>
+
+<div id="bar3">
+  <button id="btnNew">Новый заказ</button>
+  <button id="btnSend" class="main" disabled>Отправить на кассу</button>
+  <button id="btnCfg">Настройки</button>
+</div>
+
+<div id="cfgm" class="modal">
+  <div class="jbox">
+    <div class="jtitle">Настройки отправки</div>
+    <label>Адрес сервера<input type="url" id="cUrl" placeholder="https://..."></label>
+    <label>Ключ телефона<input type="text" id="cToken" autocomplete="off"></label>
+    <label>Имя продавца<input type="text" id="cSeller"></label>
+    <label>Справочник товаров (файл CSV из 1С8)<input type="file" id="cCat" accept=".csv,.txt,text/csv,text/plain"></label>
+    <div id="cCatInfo" style="color:var(--mut);font-size:13px"></div>
+    <div class="jbtns">
+      <button id="cSave" class="main">Сохранить</button>
+      <button id="cClose">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<div id="jrn">
+  <div class="jbox">
+    <div class="jtitle">Журнал кодов</div>
+    <label>Дата <input type="date" id="jDate"></label>
+    <div id="jInfo"></div>
+    <div class="jbtns">
+      <button id="jShare" class="main">Отправить файл</button>
+      <button id="jSave">Сохранить файл</button>
+      <button id="jClose">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<div id="viewer">
+  <div id="vinfo"></div>
+  <div id="vname"></div>
+  <div id="vwrap"><canvas id="vcode"></canvas></div>
+  <div id="vtxt"></div>
+  <div id="vbtns">
+    <button id="vPrev">Назад</button>
+    <button id="vNext" class="main">Дальше</button>
+    <button id="vMode">DM</button>
+    <button id="vClose">Закрыть</button>
+  </div>
+</div>
+
+<script src="bwip-js.min.js?v=13"></script>
+<script src="barcode-detector.min.js?v=13"></script>
+<script src="app.js?v=13"></script>
+</body>
+</html>
