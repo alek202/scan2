@@ -55,7 +55,13 @@ function setStatus(text, cls, sub, warn) {
     // элемент может быть строкой или объектом {t: текст, c: доп. класс}; name — строка наименования товара
     var extra = (t && typeof t === 'object') ? (' ' + t.c) : '';
     var d = document.createElement('div'); d.className = 'small' + (warn && i === 0 ? ' warn' : '') + extra;
-    d.textContent = (t && typeof t === 'object') ? t.t : t; statusEl.appendChild(d);
+    if (t && typeof t === 'object') {
+      if (t.k) { var k = document.createElement('span'); k.className = 'kod'; k.textContent = t.k + ' '; d.appendChild(k); }
+      d.appendChild(document.createTextNode(t.t));
+    } else {
+      d.textContent = t;
+    }
+    statusEl.appendChild(d);
   });
 }
 function fmtWhen(t) {
@@ -96,7 +102,7 @@ function render() {
     var box = document.createElement('div'); box.style.flex = '1';
     var p = productOf(c);
     if (p) {
-      var nm = document.createElement('div'); nm.className = 'pname'; nm.textContent = p.name + (p.kod ? ' (код ' + p.kod + ')' : '');
+      var nm = document.createElement('div'); nm.className = 'pname'; nm.textContent = (p.kod ? p.kod + ' ' : '') + p.name;
       box.appendChild(nm);
     }
     box.appendChild(t);
@@ -132,7 +138,7 @@ function addCode(raw) {
   render(); beep('ok');
   var sub = [];
   if (prev) sub.push('Этот код уже сканировали: ' + fmtWhen(prev.t));
-  sub.push({ t: prod ? (prod.name + (prod.kod ? ' (код ' + prod.kod + ')' : '')) : ('Не найден в справочнике: GTIN ' + gtinOf(s)), c: 'name' });
+  sub.push(prod ? { t: prod.name, k: prod.kod, c: 'name' } : { t: 'Не найден в справочнике: GTIN ' + gtinOf(s), c: 'name' });
   sub.push(s.slice(0, 34).split(GS).join('\u241d'));
   setStatus('Принят № ' + codes.length, 'ok', sub, !!prev);
 }
