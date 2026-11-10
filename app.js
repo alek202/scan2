@@ -29,7 +29,7 @@ try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '[]'); } catch (e) {
 })();
 function saveJournal() { try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) {} }
 
-function storeKey(c) { return c === 'nvk' ? 'scanner.codes.nvk.v1' : STORE; }
+function storeKey(c) { return c === 'nvk' ? 'scanner.codes.nvk.v1' : (c === 'prih' ? 'scanner.codes.prih.v1' : STORE); }
 function loadCodes(c) { try { return JSON.parse(localStorage.getItem(storeKey(c)) || '[]'); } catch (e) { return []; } }
 function save() { try { localStorage.setItem(storeKey(chan), JSON.stringify(codes)); } catch (e) {} }
 
@@ -389,24 +389,29 @@ try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(CFG) || '{}')); }
 try { order = JSON.parse(localStorage.getItem(ORDER) || 'null'); } catch (e) { order = null; }
 function saveOrder() { try { localStorage.setItem(ORDER, JSON.stringify(order)); } catch (e) {} }
 
-// ---------- процессы (вкладки): ТЧек — с отправкой на кассу 1С8, НВК — накладная 1С7 без отправки ----------
+// ---------- процессы (вкладки) ----------
+// Продавец: ТЧек (с отправкой на кассу 1С8) и НВК (накладная 1С7, без отправки).
+// Склад (галочка в настройках): НВК и Приходы, без отправки на кассу.
 var CHK = 'scanner.ch.v1';
+var CH_LABEL = { tchek: 'ТЧек', nvk: 'НВК', prih: 'Приходы' };
+function tabsFor() { return cfg.warehouse ? ['nvk', 'prih'] : ['tchek', 'nvk']; }
 var chan = 'tchek';
 try { chan = localStorage.getItem(CHK) || 'tchek'; } catch (e) {}
-if (chan !== 'nvk' || cfg.warehouse) chan = 'tchek';
+if (tabsFor().indexOf(chan) === -1) chan = tabsFor()[0];
 codes = loadCodes(chan);
 
-function procLabel() { return cfg.warehouse ? 'Склад' : (chan === 'nvk' ? 'НВК' : 'ТЧек'); }
+function procLabel() { return CH_LABEL[chan] || 'ТЧек'; }
 function countOf(c) { return c === chan ? codes.length : loadCodes(c).length; }
 function updateTabs() {
-  var t = countOf('tchek'), n = countOf('nvk');
-  el('tabT').textContent = 'ТЧек' + (t ? ' · ' + t : '');
-  el('tabN').textContent = 'НВК' + (n ? ' · ' + n : '');
-  el('tabT').classList.toggle('on', chan === 'tchek');
-  el('tabN').classList.toggle('on', chan === 'nvk');
+  var ts = tabsFor(), btns = [el('tabT'), el('tabN')];
+  ts.forEach(function (c, i) {
+    var n = countOf(c);
+    btns[i].textContent = CH_LABEL[c] + (n ? ' · ' + n : '');
+    btns[i].classList.toggle('on', chan === c);
+  });
 }
 function setChannel(c) {
-  if (cfg.warehouse || c === chan) return;
+  if (tabsFor().indexOf(c) === -1 || c === chan) return;
   save(); chan = c;
   try { localStorage.setItem(CHK, c); } catch (e) {}
   codes = loadCodes(c); lastSeen = {};
@@ -414,16 +419,17 @@ function setChannel(c) {
   render();
   setStatus('Процесс: ' + procLabel());
 }
-el('tabT').addEventListener('click', function () { setChannel('tchek'); });
-el('tabN').addEventListener('click', function () { setChannel('nvk'); });
+el('tabT').addEventListener('click', function () { setChannel(tabsFor()[0]); });
+el('tabN').addEventListener('click', function () { setChannel(tabsFor()[1]); });
 
 function orderLine(text, cls) { var o = el('orderInfo'); o.textContent = text; o.className = cls || ''; }
 
-// Режим склада: кнопка «Отправить на кассу» скрыта, строка статуса заказа пуста
+// Режим склада: кнопка «Отправить на кассу» скрыта, вкладки НВК и Приходы; строка статуса заказа пуста
 function applyMode() {
   btnSend.style.display = cfg.warehouse ? 'none' : '';
-  el('btnNew').style.display = cfg.warehouse ? '' : 'none';
-  el('tabs').style.display = cfg.warehouse ? 'none' : '';
+  el('btnNew').style.display = 'none';   // вместо «Нов Скан» — вкладки и «Очистить всё»
+  el('tabs').style.display = '';
+  el('bar3').style.justifyContent = cfg.warehouse ? 'flex-end' : '';
 }
 
 function showOrder() {
@@ -549,7 +555,7 @@ el('cSave').addEventListener('click', function () {
   cfg = { url: el('cUrl').value.trim(), token: el('cToken').value.trim(), seller: el('cSeller').value.trim(), warehouse: el('cWh').checked };
   try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch (e) {}
   // смена режима склада: возвращаемся на вкладку ТЧек и подгружаем её список
-  if (cfg.warehouse && chan !== 'tchek') { save(); chan = 'tchek'; try { localStorage.setItem(CHK, chan); } catch (e) {} codes = loadCodes(chan); }
+  if (tabsFor().indexOf(chan) === -1) { save(); chan = tabsFor()[0]; try { localStorage.setItem(CHK, chan); } catch (e) {} codes = loadCodes(chan); }
   el('cfgm').classList.remove('on'); render(); poll();
 });
 
