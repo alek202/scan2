@@ -23,7 +23,8 @@
   #status .small.name { font-size:15px; font-weight:600; color:inherit; }
   #status .small.name .kod { font-size:17px; font-weight:800; }
   #bar3 { display:flex; gap:8px; padding:0 12px 8px; }
-  #bar3 button { flex:1; }
+  #bar3 button { flex:1 1 0; min-width:0; }
+  #bar3 #btnCfg { flex:0 0 auto; aspect-ratio:1; padding:0 14px; font-size:22px; line-height:1; }
   #orderInfo { padding:0 16px 6px; font-weight:600; min-height:1.3em; color:var(--mut); }
   #orderInfo.ok { color:var(--ok); } #orderInfo.bad { color:var(--bad); } #orderInfo.wait { color:#ffb020; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:30; padding:16px; }
@@ -85,7 +86,7 @@
 <div id="bar3">
   <button id="btnNew">Новый заказ</button>
   <button id="btnSend" class="main" disabled>Отправить на кассу</button>
-  <button id="btnCfg">Настройки</button>
+  <button id="btnCfg" title="Настройки" aria-label="Настройки">⚙</button>
 </div>
 
 <div id="cfgm" class="modal">
@@ -129,8 +130,8 @@
   </div>
 </div>
 
-<script src="bwip-js.min.js?v=18"></script>
-<script src="barcode-detector.min.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="bwip-js.min.js?v=19"></script>
+<script src="barcode-detector.min.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
