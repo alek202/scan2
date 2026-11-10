@@ -29,7 +29,9 @@ try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '[]'); } catch (e) {
 })();
 function saveJournal() { try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) {} }
 
-function save() { try { localStorage.setItem(STORE, JSON.stringify(codes)); } catch (e) {} }
+function storeKey(c) { return c === 'nvk' ? 'scanner.codes.nvk.v1' : STORE; }
+function loadCodes(c) { try { return JSON.parse(localStorage.getItem(storeKey(c)) || '[]'); } catch (e) { return []; } }
+function save() { try { localStorage.setItem(storeKey(chan), JSON.stringify(codes)); } catch (e) {} }
 
 // ---------- звук и вибрация ----------
 function beep(kind) {
@@ -132,14 +134,20 @@ function addCode(raw) {
   }
   var prev = null;
   for (var k = journal.length - 1; k >= 0; k--) { if (journal[k].c === s) { prev = journal[k]; break; } }
+  // ТЧек: предыдущий заказ уже принят кассой — следующий код начинает новый заказ
+  var startedNew = false;
+  if (!cfg.warehouse && chan === 'tchek' && order && order.status === 'acked') {
+    codes = []; save(); order = null; saveOrder(); startedNew = true;
+  }
   codes.push(s); save();
   var prod = productOf(s);
-  journal.push({ t: Date.now(), c: s, n: prod ? prod.name : '', k: prod ? prod.kod : '' }); saveJournal();
+  journal.push({ t: Date.now(), c: s, n: prod ? prod.name : '', k: prod ? prod.kod : '', p: procLabel() }); saveJournal();
   render(); beep('ok');
   var sub = [];
-  if (prev) sub.push('Этот код уже сканировали: ' + fmtWhen(prev.t));
+  if (prev) sub.push('Этот код уже сканировали: ' + fmtWhen(prev.t) + ' (' + (prev.p || 'ТЧек') + ')');
   sub.push(prod ? { t: prod.name, k: prod.kod, c: 'name' } : { t: 'Не найден в справочнике: GTIN ' + gtinOf(s), c: 'name' });
   sub.push(s.slice(0, 34).split(GS).join('\u241d'));
+  if (startedNew) sub.push('Начат новый заказ');
   setStatus('Принят № ' + codes.length, 'ok', sub, !!prev);
 }
 
@@ -286,11 +294,17 @@ btnTorch.addEventListener('click', toggleTorch);
 btnShow.addEventListener('click', openViewer);
 btnUndo.addEventListener('click', function () {
   var last = codes.pop(); save();
-  for (var i = journal.length - 1; i >= 0; i--) { if (journal[i].c === last) { journal.splice(i, 1); break; } }
+  for (var i = journal.length - 1; i >= 0; i--) { if (journal[i].c === last && (journal[i].p || 'ТЧек') === procLabel()) { journal.splice(i, 1); break; } }
   saveJournal(); render();
 });
 btnClear.addEventListener('click', function () {
-  if (confirm('Удалить все ' + codes.length + ' кодов из списка?')) { codes = []; save(); render(); }
+  var msg = 'Удалить все ' + codes.length + ' кодов из списка?';
+  if (!cfg.warehouse && chan === 'tchek' && order && order.status === 'new') msg = 'Список передан на кассу и ещё не принят. Всё равно очистить?';
+  if (confirm(msg)) {
+    codes = []; save();
+    if (!cfg.warehouse && chan === 'tchek') { order = null; saveOrder(); }
+    render();
+  }
 });
 el('vPrev').addEventListener('click', function () { if (viewIndex > 0) { viewIndex--; drawCode(); } });
 el('vNext').addEventListener('click', function () { if (viewIndex < codes.length - 1) { viewIndex++; drawCode(); } });
@@ -320,7 +334,7 @@ function updateJournalInfo() {
 }
 
 function buildCsv(key) {
-  var rows = ['Дата;Время;№;Код (разделители показаны как ␝);Код (как есть, с разделителями GS);Код 1С8;Наименование'];
+  var rows = ['Дата;Время;№;Процесс;Код (разделители показаны как ␝);Код (как есть, с разделителями GS);Код 1С8;Наименование'];
   dayEntries(key).forEach(function (j, i) {
     var d = new Date(j.t);
     var tm = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
@@ -328,7 +342,7 @@ function buildCsv(key) {
     var pp = productOf(j.c);
     var pn = j.n || (pp ? pp.name : '');
     var pk = j.k || (pp ? pp.kod : '');
-    rows.push([key, tm, i + 1, '"' + vis.replace(/"/g, '""') + '"', '"' + j.c.replace(/"/g, '""') + '"', '"' + pk.replace(/"/g, '""') + '"', '"' + pn.replace(/"/g, '""') + '"'].join(';'));
+    rows.push([key, tm, i + 1, (j.p || 'ТЧек'), '"' + vis.replace(/"/g, '""') + '"', '"' + j.c.replace(/"/g, '""') + '"', '"' + pk.replace(/"/g, '""') + '"', '"' + pn.replace(/"/g, '""') + '"'].join(';'));
   });
   return '\ufeff' + rows.join('\r\n') + '\r\n';
 }
@@ -369,15 +383,53 @@ el('jClose').addEventListener('click', function () { el('jrn').classList.remove(
 
 // ---------- отправка заказа на кассу (очередь на сервере) ----------
 var CFG = 'scanner.cfg.v1', ORDER = 'scanner.order.v1';
-var cfg = { url: 'https://194-190-153-224.sslip.io:8444', token: '', seller: '' }, order = null, pollTimer = null;
+var cfg = { url: 'https://194-190-153-224.sslip.io:8444', token: '', seller: '', warehouse: false }, order = null, pollTimer = null;
 var btnSend = el('btnSend');
 try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(CFG) || '{}')); } catch (e) {}
 try { order = JSON.parse(localStorage.getItem(ORDER) || 'null'); } catch (e) { order = null; }
 function saveOrder() { try { localStorage.setItem(ORDER, JSON.stringify(order)); } catch (e) {} }
 
+// ---------- процессы (вкладки): ТЧек — с отправкой на кассу 1С8, НВК — накладная 1С7 без отправки ----------
+var CHK = 'scanner.ch.v1';
+var chan = 'tchek';
+try { chan = localStorage.getItem(CHK) || 'tchek'; } catch (e) {}
+if (chan !== 'nvk' || cfg.warehouse) chan = 'tchek';
+codes = loadCodes(chan);
+
+function procLabel() { return cfg.warehouse ? 'Склад' : (chan === 'nvk' ? 'НВК' : 'ТЧек'); }
+function countOf(c) { return c === chan ? codes.length : loadCodes(c).length; }
+function updateTabs() {
+  var t = countOf('tchek'), n = countOf('nvk');
+  el('tabT').textContent = 'ТЧек' + (t ? ' · ' + t : '');
+  el('tabN').textContent = 'НВК' + (n ? ' · ' + n : '');
+  el('tabT').classList.toggle('on', chan === 'tchek');
+  el('tabN').classList.toggle('on', chan === 'nvk');
+}
+function setChannel(c) {
+  if (cfg.warehouse || c === chan) return;
+  save(); chan = c;
+  try { localStorage.setItem(CHK, c); } catch (e) {}
+  codes = loadCodes(c); lastSeen = {};
+  el('viewer').classList.remove('on');
+  render();
+  setStatus('Процесс: ' + procLabel());
+}
+el('tabT').addEventListener('click', function () { setChannel('tchek'); });
+el('tabN').addEventListener('click', function () { setChannel('nvk'); });
+
 function orderLine(text, cls) { var o = el('orderInfo'); o.textContent = text; o.className = cls || ''; }
 
+// Режим склада: кнопка «Отправить на кассу» скрыта, строка статуса заказа пуста
+function applyMode() {
+  btnSend.style.display = cfg.warehouse ? 'none' : '';
+  el('btnNew').style.display = cfg.warehouse ? '' : 'none';
+  el('tabs').style.display = cfg.warehouse ? 'none' : '';
+}
+
 function showOrder() {
+  applyMode();
+  if (cfg.warehouse) { orderLine('', ''); return; }
+  if (chan === 'nvk') { btnSend.disabled = true; orderLine('', ''); return; }
   btnSend.disabled = codes.length === 0;
   if (!order) { orderLine(codes.length ? 'Не отправлено на кассу' : '', codes.length ? 'wait' : ''); return; }
   if (order.status === 'cancelled') { orderLine('Заказ № ' + order.id + ' отменён', 'bad'); return; }
@@ -398,7 +450,7 @@ function api(method, path, body) {
 
 function poll() {
   clearTimeout(pollTimer);
-  if (!order || order.status === 'acked' || !cfg.url) return;
+  if (cfg.warehouse || !order || order.status === 'acked' || !cfg.url) return;
   api('GET', '/api/orders/' + order.id).then(function (j) {
     if (j.status === 'acked') { order.status = 'acked'; saveOrder(); showOrder(); beep('ok'); return; }
     if (j.status === 'cancelled') { order.status = 'cancelled'; saveOrder(); showOrder(); return; }
@@ -407,21 +459,23 @@ function poll() {
 }
 
 function sendOrder() {
-  if (!cfg.url || !cfg.token) { openCfg(); return; }
+  if (cfg.warehouse) return;
+  if (chan !== 'tchek') return;
+  if (!cfg.url || !cfg.token) { askPin(); return; }
   if (!codes.length) return;
   var sig = codes.join('\n');
   // тот же список уже передан или принят кассой — повторно не отправляем
   if (order && order.sig === sig && order.status !== 'cancelled') {
     beep('dup');
     orderLine(order.status === 'acked'
-      ? 'Этот список уже принят кассой (заказ № ' + order.id + '). Для новых канистр нажмите «Новый заказ».'
+      ? 'Этот список уже принят кассой (заказ № ' + order.id + '). Следующий отсканированный код начнёт новый заказ.'
       : 'Уже передано: заказ № ' + order.id + ', ждёт кассу.', 'wait');
     return;
   }
   // заказ уже принят кассой — дополнять его нельзя
   if (order && order.status === 'acked') {
     beep('bad');
-    orderLine('Заказ № ' + order.id + ' уже принят кассой. Для новых канистр нажмите «Новый заказ».', 'bad');
+    orderLine('Заказ № ' + order.id + ' уже принят кассой. Следующий отсканированный код начнёт новый заказ.', 'bad');
     return;
   }
   // заказ передан, но не принят, а список изменился — предлагаем заменить
@@ -445,29 +499,63 @@ function sendOrder() {
 }
 
 function newOrder() {
-  if (codes.length && (!order || order.status !== 'acked')) {
+  if (cfg.warehouse) {
+    if (codes.length && !confirm('Очистить список ' + codes.length + ' кодов и начать новый заказ?')) return;
+  } else if (codes.length && (!order || order.status !== 'acked')) {
     if (!confirm('Список не принят кассой. Всё равно начать новый заказ и очистить список?')) return;
   }
   codes = []; save(); order = null; saveOrder(); render(); showOrder();
 }
 
+// ---------- PIN на настройки ----------
+var PINK = 'scanner.pin.v1';
+function pinHash(p) { var h = 5381, s = 'scan2|' + p; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return String(h >>> 0); }
+function pinSet() { try { return localStorage.getItem(PINK) || ''; } catch (e) { return ''; } }
+function askPin() {
+  if (!pinSet()) { openCfg(); return; }
+  el('pIn').value = ''; el('pErr').textContent = ''; el('pinm').classList.add('on');
+  setTimeout(function () { try { el('pIn').focus(); } catch (e) {} }, 60);
+}
+el('pOk').addEventListener('click', function () {
+  if (pinHash(el('pIn').value.trim()) === pinSet()) { el('pinm').classList.remove('on'); openCfg(); }
+  else { el('pErr').textContent = 'Неверный PIN'; el('pIn').value = ''; beep('bad'); }
+});
+el('pCancel').addEventListener('click', function () { el('pinm').classList.remove('on'); });
+el('cPinDel').addEventListener('click', function () {
+  if (!confirm('Убрать PIN с настроек?')) return;
+  try { localStorage.removeItem(PINK); } catch (e) {}
+  el('cPinDel').style.display = 'none';
+});
+
+function cfgVisibility() { el('cSrv').style.display = el('cWh').checked ? 'none' : ''; }
 function openCfg() {
   el('cUrl').value = cfg.url; el('cToken').value = cfg.token; el('cSeller').value = cfg.seller;
+  el('cWh').checked = !!cfg.warehouse; cfgVisibility();
+  el('cPin').value = ''; el('cPinDel').style.display = pinSet() ? '' : 'none';
   catInfo(); el('cfgm').classList.add('on');
 }
+el('cWh').addEventListener('change', cfgVisibility);
 el('btnSend').addEventListener('click', sendOrder);
 el('btnNew').addEventListener('click', newOrder);
-el('btnCfg').addEventListener('click', openCfg);
+el('btnCfg').addEventListener('click', askPin);
 el('cClose').addEventListener('click', function () { el('cfgm').classList.remove('on'); });
 el('cSave').addEventListener('click', function () {
-  cfg = { url: el('cUrl').value.trim(), token: el('cToken').value.trim(), seller: el('cSeller').value.trim() };
+  var np = el('cPin').value.trim();
+  if (np) {
+    if (!/^\d{4}$/.test(np)) { alert('PIN: ровно 4 цифры'); return; }
+    try { localStorage.setItem(PINK, pinHash(np)); } catch (e) {}
+  }
+  var wasWh = !!cfg.warehouse;
+  cfg = { url: el('cUrl').value.trim(), token: el('cToken').value.trim(), seller: el('cSeller').value.trim(), warehouse: el('cWh').checked };
   try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch (e) {}
-  el('cfgm').classList.remove('on'); showOrder(); poll();
+  // смена режима склада: возвращаемся на вкладку ТЧек и подгружаем её список
+  if (cfg.warehouse && chan !== 'tchek') { save(); chan = 'tchek'; try { localStorage.setItem(CHK, chan); } catch (e) {} codes = loadCodes(chan); }
+  el('cfgm').classList.remove('on'); render(); poll();
 });
 
 // обновляем строку заказа при любом изменении списка
 var _render = render;
-render = function () { _render(); showOrder(); };
+render = function () { _render(); showOrder(); updateTabs(); };
 render();
 poll();
 

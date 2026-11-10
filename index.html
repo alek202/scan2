@@ -12,7 +12,7 @@
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:16px/1.35 system-ui,sans-serif; }
   body { display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
-  #cam { position:relative; flex:0 0 42vh; background:#000; overflow:hidden; }
+  #cam { position:relative; flex:0 0 38vh; background:#000; overflow:hidden; }
   #video { width:100%; height:100%; object-fit:cover; }
   #overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   #status { position:absolute; left:0; right:0; bottom:0; padding:6px 12px; background:rgba(0,0,0,.55); font-weight:600; min-height:32px; }
@@ -22,6 +22,9 @@
   #status .small.warn { color:#ffb020; font-weight:600; }
   #status .small.name { font-size:15px; font-weight:600; color:inherit; }
   #status .small.name .kod { font-size:17px; font-weight:800; }
+  #tabs { display:flex; gap:8px; padding:8px 12px 0; }
+  .tab { flex:1; font-size:18px; padding:12px 8px; }
+  .tab.on { background:var(--acc); border-color:var(--acc); color:#fff; }
   #bar3 { display:flex; gap:8px; padding:0 12px 8px; }
   #bar3 button { flex:1 1 0; min-width:0; }
   #bar3 #btnCfg { flex:0 0 auto; aspect-ratio:1; padding:0 14px; font-size:22px; line-height:1; }
@@ -31,6 +34,8 @@
   .modal.on { display:flex; }
   .jbox label { display:flex; flex-direction:column; gap:4px; color:var(--mut); font-size:13px; }
   .jbox label input { margin-left:0; }
+  .jbox label.chk { flex-direction:row; align-items:center; gap:10px; color:var(--fg); font-size:15px; }
+  .jbox label.chk input { width:24px; height:24px; padding:0; flex:0 0 auto; }
   #bar, #bar2 { display:flex; gap:8px; padding:8px 12px; align-items:center; }
   #count { flex:1; font-size:20px; font-weight:700; }
   button { background:var(--card); color:var(--fg); border:1px solid #333; border-radius:10px; padding:12px 14px; font:inherit; font-weight:600; }
@@ -63,6 +68,10 @@
 </style>
 </head>
 <body>
+<div id="tabs">
+  <button id="tabT" class="tab on">ТЧек</button>
+  <button id="tabN" class="tab">НВК</button>
+</div>
 <div id="cam">
   <video id="video" playsinline muted></video>
   <canvas id="overlay"></canvas>
@@ -84,17 +93,34 @@
 </div>
 
 <div id="bar3">
-  <button id="btnNew">Новый заказ</button>
+  <button id="btnNew">Нов Скан</button>
   <button id="btnSend" class="main" disabled>Отправить на кассу</button>
   <button id="btnCfg" title="Настройки" aria-label="Настройки">⚙</button>
 </div>
 
+<div id="pinm" class="modal">
+  <div class="jbox">
+    <div class="jtitle">Введите PIN</div>
+    <input type="password" id="pIn" inputmode="numeric" maxlength="4" autocomplete="off">
+    <div id="pErr" style="color:var(--bad);min-height:1.3em"></div>
+    <div class="jbtns">
+      <button id="pOk" class="main">Войти</button>
+      <button id="pCancel">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <div id="cfgm" class="modal">
   <div class="jbox">
-    <div class="jtitle">Настройки отправки</div>
-    <label>Адрес сервера<input type="url" id="cUrl" placeholder="https://..."></label>
-    <label>Ключ телефона<input type="text" id="cToken" autocomplete="off"></label>
-    <label>Имя продавца<input type="text" id="cSeller"></label>
+    <div class="jtitle">Настройки</div>
+    <label class="chk"><input type="checkbox" id="cWh"> Режим склада (без отправки на кассу)</label>
+    <label>PIN на настройки (4 цифры)<input type="password" id="cPin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="оставьте пустым, чтобы не менять"></label>
+    <button id="cPinDel" style="display:none">Убрать PIN</button>
+    <div id="cSrv" style="display:flex;flex-direction:column;gap:12px">
+      <label>Адрес сервера<input type="url" id="cUrl" placeholder="https://..."></label>
+      <label>Ключ телефона<input type="text" id="cToken" autocomplete="off"></label>
+      <label>Имя продавца<input type="text" id="cSeller"></label>
+    </div>
     <label>Справочник товаров (файл CSV из 1С8)<input type="file" id="cCat" accept=".csv,.txt,text/csv,text/plain"></label>
     <div id="cCatInfo" style="color:var(--mut);font-size:13px"></div>
     <div class="jbtns">
@@ -130,8 +156,8 @@
   </div>
 </div>
 
-<script src="bwip-js.min.js?v=19"></script>
-<script src="barcode-detector.min.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="bwip-js.min.js?v=21"></script>
+<script src="barcode-detector.min.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
