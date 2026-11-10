@@ -134,7 +134,7 @@ function addCode(raw) {
   for (var k = journal.length - 1; k >= 0; k--) { if (journal[k].c === s) { prev = journal[k]; break; } }
   codes.push(s); save();
   var prod = productOf(s);
-  journal.push({ t: Date.now(), c: s, n: prod ? prod.name : '' }); saveJournal();
+  journal.push({ t: Date.now(), c: s, n: prod ? prod.name : '', k: prod ? prod.kod : '' }); saveJournal();
   render(); beep('ok');
   var sub = [];
   if (prev) sub.push('Этот код уже сканировали: ' + fmtWhen(prev.t));
@@ -320,13 +320,15 @@ function updateJournalInfo() {
 }
 
 function buildCsv(key) {
-  var rows = ['Дата;Время;№;Код (разделители показаны как ␝);Код (как есть, с разделителями GS);Наименование'];
+  var rows = ['Дата;Время;№;Код (разделители показаны как ␝);Код (как есть, с разделителями GS);Код 1С8;Наименование'];
   dayEntries(key).forEach(function (j, i) {
     var d = new Date(j.t);
     var tm = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     var vis = j.c.split(GS).join('\u241d');
-    var pn = j.n || (productOf(j.c) ? productOf(j.c).name : '');
-    rows.push([key, tm, i + 1, '"' + vis.replace(/"/g, '""') + '"', '"' + j.c.replace(/"/g, '""') + '"', '"' + pn.replace(/"/g, '""') + '"'].join(';'));
+    var pp = productOf(j.c);
+    var pn = j.n || (pp ? pp.name : '');
+    var pk = j.k || (pp ? pp.kod : '');
+    rows.push([key, tm, i + 1, '"' + vis.replace(/"/g, '""') + '"', '"' + j.c.replace(/"/g, '""') + '"', '"' + pk.replace(/"/g, '""') + '"', '"' + pn.replace(/"/g, '""') + '"'].join(';'));
   });
   return '\ufeff' + rows.join('\r\n') + '\r\n';
 }
